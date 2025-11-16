@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>NEET Mock Platform – Multiple Tests with Sections & Export</title>
+  <title>NEET Mock Platform – Full Page</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     * {
@@ -429,15 +429,16 @@
   <div class="container">
     <header>
       <h1>NEET Mock Platform – Multiple Tests</h1>
-      <p>Student / Host modes, NEET-style marking, timers, sections & CSV export.</p>
+      <p>Student / Host modes, timers, sections, topics, CSV export & JSON import.</p>
       <div class="chip-row">
         <span class="chip">Sample Test: 30 MCQs</span>
         <span class="chip">NEET Full Test: 180Q from Bank</span>
-        <span class="chip">Sunday Auto-Test: 180Q</span>
+        <span class="chip">Sunday Auto-Test: 180Q from Topics</span>
         <span class="chip">Default Marking: +4, −1 (Host can change)</span>
       </div>
     </header>
 
+    <!-- Main controls -->
     <section class="controls">
       <!-- Subject filter -->
       <div class="filters">
@@ -448,7 +449,7 @@
         <button class="filter-btn" data-filter="physics">Physics</button>
       </div>
 
-      <!-- Test selector & new test -->
+      <!-- Test selector, new test, import -->
       <div class="test-control">
         <label>
           Test:
@@ -457,7 +458,19 @@
         <button id="newTestBtn" class="role-btn" type="button">
           + New Test (Host)
         </button>
-        <small style="color:#6b7280;">On Sundays, a dated NEET Full Test (180Q) is auto-created.</small>
+        <label style="font-size:0.75rem;color:#4b5563;flex-direction:column;align-items:flex-start;">
+          Import Questions JSON (Host):
+          <input
+            type="file"
+            id="testFileInput"
+            accept=".json"
+            style="font-size:0.75rem;margin-top:2px;"
+          />
+        </label>
+        <button id="importTestBtn" class="role-btn" type="button">
+          📂 Import Questions JSON (Host)
+        </button>
+        <small style="color:#6b7280;">Every Sunday, a dated NEET full test is auto-created using saved topics.</small>
       </div>
 
       <!-- Timer + marks + roles -->
@@ -491,9 +504,61 @@
       </div>
     </section>
 
+    <!-- Host auto-topic panel -->
+    <section class="controls" id="autoTopicPanel">
+      <div class="test-control">
+        <label style="font-size:0.8rem;color:#4b5563;">Auto NEET topics (Host):</label>
+        <input
+          id="autoTopicsInput"
+          type="text"
+          placeholder="e.g. cell, goc, dual nature, human reproduction"
+          style="padding:4px 8px;border-radius:999px;border:1px solid #d1d5db;font-size:0.8rem;width:100%;"
+        />
+        <button id="saveTopicsBtn" class="role-btn" type="button">
+          💾 Save Topics for Auto Test
+        </button>
+        <button id="generateFullFromTopicsBtn" class="role-btn" type="button">
+          🧪 Create Full NEET Test from Topics
+        </button>
+        <small style="color:#6b7280;">
+          Every Sunday, auto NEET test uses these topics.
+          If you don't change them in a week, the previous topics are reused.
+          If no topics are saved or match, full-syllabus bank is used.
+        </small>
+      </div>
+    </section>
+
+    <!-- Student details panel -->
+    <section class="controls" id="studentInfoPanel">
+      <div class="test-control">
+        <label>
+          Student Name:
+          <input
+            id="studentNameInput"
+            type="text"
+            placeholder="Enter your name"
+            style="padding:4px 8px;border-radius:999px;border:1px solid #d1d5db;font-size:0.8rem;width:100%;"
+          />
+        </label>
+        <label>
+          Roll / ID:
+          <input
+            id="studentIdInput"
+            type="text"
+            placeholder="Optional: Roll number or ID"
+            style="padding:4px 8px;border-radius:999px;border:1px solid #d1d5db;font-size:0.8rem;width:100%;"
+          />
+        </label>
+        <small style="color:#6b7280;">
+          These details will appear in the CSV export for the host.
+        </small>
+      </div>
+    </section>
+
     <!-- Questions rendered here -->
     <form id="quizForm" class="questions"></form>
 
+    <!-- Result & actions -->
     <section class="result-bar">
       <div class="result-stats">
         <span id="scoreChip" class="stat-chip">Score: 0</span>
@@ -520,8 +585,7 @@
     </section>
 
     <footer>
-      Host PIN: <b>NEET123</b> · Host can change marks, create tests, edit questions, export results.
-      <br />
+      Host PIN: <b>NEET123</b> · Host can change marks, create tests, import questions, edit questions, set topics & export results.<br />
       Section chips show: Correct/Total (Marks/Max Marks) for Bio, Chem, Phy.
     </footer>
   </div>
@@ -540,6 +604,8 @@
     let wrongMark = -1;
 
     let lastEvaluation = null; // for CSV export
+
+    const AUTO_TOPICS_KEY = "neet_auto_topics";
 
     // ============ DOM REFERENCES ============
     const quizForm = document.getElementById("quizForm");
@@ -568,6 +634,16 @@
     const testSelect = document.getElementById("testSelect");
     const newTestBtn = document.getElementById("newTestBtn");
 
+    const autoTopicsInput = document.getElementById("autoTopicsInput");
+    const saveTopicsBtn = document.getElementById("saveTopicsBtn");
+    const generateFullFromTopicsBtn = document.getElementById("generateFullFromTopicsBtn");
+
+    const studentNameInput = document.getElementById("studentNameInput");
+    const studentIdInput = document.getElementById("studentIdInput");
+
+    const testFileInput = document.getElementById("testFileInput");
+    const importTestBtn = document.getElementById("importTestBtn");
+
     // ============ HELPERS ============
     function getCurrentTest() {
       return tests[currentTestIndex];
@@ -593,6 +669,14 @@
     function csvEscape(str) {
       if (str === null || str === undefined) return '""';
       return '"' + String(str).replace(/"/g, '""') + '"';
+    }
+
+    function getSavedAutoTopicsString() {
+      try {
+        return localStorage.getItem(AUTO_TOPICS_KEY) || "";
+      } catch (e) {
+        return "";
+      }
     }
 
     // ============ SAMPLE 30Q TEST ============
@@ -1212,6 +1296,96 @@
       }
     ];
 
+    // --------- Topic-based tests ----------
+    function createTestFromTopics(topics, numQuestions) {
+      const keywords = topics
+        .map((t) => t.trim().toLowerCase())
+        .filter((t) => t.length > 0);
+
+      if (keywords.length === 0) {
+        alert("No valid topics entered.");
+        return null;
+      }
+
+      const matches = neetQuestionBank.filter((q) => {
+        const label = (q.topicLabel || "").toLowerCase();
+        const text = (q.text || "").toLowerCase();
+        return keywords.some(
+          (k) => label.includes(k) || text.includes(k)
+        );
+      });
+
+      if (matches.length === 0) {
+        alert("No questions found for these topics in the local bank.\nAdd more questions or adjust keywords.");
+        return null;
+      }
+
+      // Shuffle
+      for (let i = matches.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [matches[i], matches[j]] = [matches[j], matches[i]];
+      }
+
+      let selected = matches;
+      if (numQuestions && numQuestions > 0 && numQuestions < matches.length) {
+        selected = matches.slice(0, numQuestions);
+      }
+
+      const questions = selected.map((base, idx) => ({
+        id: "T" + (idx + 1),
+        subject: base.subject,
+        topicLabel: base.topicLabel,
+        text: base.text,
+        options: base.options.slice(),
+        correctIndex: base.correctIndex,
+        explanation: base.explanation
+      }));
+
+      return {
+        id: "topics-" + Date.now(),
+        name: "Topic Test: " + keywords.join(", ") + ` (${questions.length}Q)`,
+        questions,
+        marking: { right: 4, wrong: -1 }
+      };
+    }
+
+    function createFullNeetTestFromTopics(topics) {
+      const baseTest = createTestFromTopics(topics, null);
+      if (!baseTest) return null;
+
+      const totalNeeded = 180;
+      const baseQs = baseTest.questions;
+      if (baseQs.length === 0) return null;
+
+      const questions = [];
+      while (questions.length < totalNeeded) {
+        const pool = baseQs.slice();
+        for (let i = pool.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [pool[i], pool[j]] = [pool[j], pool[i]];
+        }
+        for (let i = 0; i < pool.length && questions.length < totalNeeded; i++) {
+          const base = pool[i];
+          questions.push({
+            id: "FT" + (questions.length + 1),
+            subject: base.subject,
+            topicLabel: base.topicLabel,
+            text: base.text,
+            options: base.options.slice(),
+            correctIndex: base.correctIndex,
+            explanation: base.explanation
+          });
+        }
+      }
+
+      baseTest.questions = questions;
+      baseTest.name =
+        "NEET Full Topic Test: " +
+        topics.map((t) => t.trim()).join(", ") +
+        ` (${questions.length}Q)`;
+      return baseTest;
+    }
+
     function createNeetFullTest180FromBank() {
       const totalNeeded = 180;
       const bank = neetQuestionBank;
@@ -1260,7 +1434,18 @@
       const already = tests.some((t) => t.id === testId);
       if (already) return;
 
-      const tmpl = createNeetFullTest180FromBank();
+      let tmpl = null;
+      const topicStr = getSavedAutoTopicsString();
+
+      if (topicStr.trim()) {
+        const topics = topicStr.split(",");
+        tmpl = createFullNeetTestFromTopics(topics);
+      }
+
+      if (!tmpl) {
+        tmpl = createNeetFullTest180FromBank();
+      }
+
       tmpl.id = testId;
       tmpl.name = testName;
       tests.push(tmpl);
@@ -1616,10 +1801,15 @@
       chemChip.textContent = `Chem: ${chemCorrectQ}/${chemTotalQ || 0} (${chemScore}/${chemMax || 0})`;
       phyChip.textContent = `Phy: ${phyCorrectQ}/${phyTotalQ || 0} (${phyScore}/${phyMax || 0})`;
 
+      const studentName = studentNameInput ? studentNameInput.value.trim() : "";
+      const studentId = studentIdInput ? studentIdInput.value.trim() : "";
+
       lastEvaluation = {
         timestamp: new Date().toISOString(),
         testId: test.id,
         testName: test.name,
+        studentName,
+        studentId,
         totalQuestions: total,
         attempted,
         correct: correctCount,
@@ -1675,6 +1865,8 @@
       lines.push(
         [
           "Test Name",
+          "Student Name",
+          "Student Roll/ID",
           "Timestamp",
           "Total Questions",
           "Attempted",
@@ -1692,6 +1884,8 @@
       lines.push(
         [
           ev.testName,
+          ev.studentName || "",
+          ev.studentId || "",
           ev.timestamp,
           ev.totalQuestions,
           ev.attempted,
@@ -1781,9 +1975,13 @@
       });
       const url = URL.createObjectURL(blob);
 
-      const safeName = (ev.testName || "NEET_Test")
+      const baseName =
+        (ev.testName || "NEET_Test") +
+        (ev.studentName ? "_" + ev.studentName : "");
+      const safeName = baseName
         .replace(/[^a-z0-9\-]+/gi, "_")
         .slice(0, 80);
+
       const a = document.createElement("a");
       a.href = url;
       a.download = safeName + "_results.csv";
@@ -1947,8 +2145,140 @@
       alert(`New test "${name}" created with ${numQ} editable questions.`);
     });
 
+    // Import Questions JSON (Host) – adds to bank and creates a test
+    importTestBtn.addEventListener("click", () => {
+      if (currentRole !== "host") {
+        alert("Only host can import questions.");
+        return;
+      }
+
+      const file = testFileInput.files && testFileInput.files[0];
+      if (!file) {
+        alert("Please choose a JSON file first.");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const data = JSON.parse(e.target.result);
+
+          // Accept formats:
+          // 1) [ {question}, {question}, ... ]
+          // 2) { bank: [ ... ] }
+          // 3) { questions: [ ... ] }
+          let arr = null;
+          if (Array.isArray(data)) {
+            arr = data;
+          } else if (data && Array.isArray(data.bank)) {
+            arr = data.bank;
+          } else if (data && Array.isArray(data.questions)) {
+            arr = data.questions;
+          }
+
+          if (!arr || arr.length === 0) {
+            alert("Invalid file format or empty question list.");
+            return;
+          }
+
+          const mapped = arr.map((q, idx) => ({
+            id: q.id || "F" + (idx + 1),
+            subject: (q.subject || "mixed").toLowerCase(),
+            topicLabel: q.topicLabel || "Imported",
+            text: q.text || `Q${idx + 1}`,
+            options: Array.isArray(q.options) && q.options.length === 4
+              ? q.options
+              : ["Option A", "Option B", "Option C", "Option D"],
+            correctIndex:
+              typeof q.correctIndex === "number" &&
+              q.correctIndex >= 0 &&
+              q.correctIndex < 4
+                ? q.correctIndex
+                : 0,
+            explanation: q.explanation || ""
+          }));
+
+          // Add to NEET bank
+          neetQuestionBank.push(...mapped);
+
+          const testName =
+            prompt(
+              "Name for this imported test:",
+              file.name.replace(/\.[^.]+$/, "")
+            ) || "Imported Test";
+
+          const newTest = {
+            id: "file-" + Date.now(),
+            name: testName + ` (${mapped.length}Q)`,
+            questions: mapped,
+            marking: { right: 4, wrong: -1 }
+          };
+
+          tests.push(newTest);
+          currentTestIndex = tests.length - 1;
+          renderTestOptions();
+          renderCurrentTest();
+          alert(
+            `Imported ${mapped.length} questions into the bank.\n` +
+            `New test "${newTest.name}" created.`
+          );
+        } catch (err) {
+          console.error(err);
+          alert("Error reading file. Make sure it's valid JSON with a question list.");
+        }
+      };
+
+      reader.readAsText(file);
+    });
+
+    saveTopicsBtn.addEventListener("click", () => {
+      if (currentRole !== "host") {
+        alert("Only host can save auto-test topics.");
+        return;
+      }
+      const value = autoTopicsInput.value || "";
+      try {
+        localStorage.setItem(AUTO_TOPICS_KEY, value);
+      } catch (e) {}
+      alert("Topics saved for auto NEET test.\nThese will be used for Sunday auto-generation.");
+    });
+
+    generateFullFromTopicsBtn.addEventListener("click", () => {
+      if (currentRole !== "host") {
+        alert("Only host can generate topic-based full NEET tests.");
+        return;
+      }
+
+      let topicStr = autoTopicsInput.value;
+      if (!topicStr || !topicStr.trim()) {
+        topicStr = getSavedAutoTopicsString();
+      }
+      if (!topicStr || !topicStr.trim()) {
+        alert("No topics found. Please enter some topics first.");
+        return;
+      }
+
+      const topics = topicStr.split(",");
+      const fullTest = createFullNeetTestFromTopics(topics);
+      if (!fullTest) return;
+
+      tests.push(fullTest);
+      currentTestIndex = tests.length - 1;
+      renderTestOptions();
+      renderCurrentTest();
+      alert(`New full NEET test created from topics:\n${fullTest.name}`);
+    });
+
     // ============ INIT ============
     function init() {
+      // Load saved auto-topics into the input (if available)
+      try {
+        const saved = getSavedAutoTopicsString();
+        if (saved && autoTopicsInput) {
+          autoTopicsInput.value = saved;
+        }
+      } catch (e) {}
+
       tests.push(createSample30QTest());
       autoCreateSundayFullTest();
       tests.push(createNeetFullTest180FromBank());
